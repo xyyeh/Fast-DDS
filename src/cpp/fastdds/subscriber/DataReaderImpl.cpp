@@ -608,29 +608,24 @@ ReturnCode_t DataReaderImpl::read_or_take_next_sample(
         return ReturnCode_t::RETCODE_TIMEOUT;
     }
 
-    auto it = history_.lookup_instance(HANDLE_NIL, false);
-    if (!it.first)
+    SampleInfo_t rtps_info;
+    bool result = false;
+    if (should_take)
     {
-        return ReturnCode_t::RETCODE_NO_DATA;
+        result = history_.takeNextData(data, &rtps_info, max_blocking_time);
+    }
+    else
+    {
+        result = history_.readNextData(data, &rtps_info, max_blocking_time);
     }
 
-    StackAllocatedSequence<void*, 1> data_values;
-    const_cast<void**>(data_values.buffer())[0] = data;
-    StackAllocatedSequence<SampleInfo, 1> sample_infos;
-
-    detail::StateFilter states{ NOT_READ_SAMPLE_STATE, ANY_VIEW_STATE, ANY_INSTANCE_STATE };
-    detail::ReadTakeCommand cmd(*this, data_values, sample_infos, 1, states, it.second, false);
-    while (!cmd.is_finished())
+    if (result)
     {
-        cmd.add_instance(should_take);
+        sample_info_to_dds(rtps_info, info);
+        return ReturnCode_t::RETCODE_OK;
     }
 
-    ReturnCode_t code = cmd.return_value();
-    if (ReturnCode_t::RETCODE_OK == code)
-    {
-        *info = sample_infos[0];
-    }
-    return code;
+    return ReturnCode_t::RETCODE_NO_DATA;
 }
 
 ReturnCode_t DataReaderImpl::read_next_sample(
