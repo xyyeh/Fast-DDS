@@ -180,6 +180,9 @@ private:
     //!Type object to deserialize Key
     void* get_key_object_;
 
+    //! Timestamp of the last read sample to accelerate lookups for next unread
+    rtps::Time_t last_read_timestamp_ = c_TimeZero;
+
     /// Function processing a received change
     std::function<bool(rtps::CacheChange_t*, size_t)> receive_fn_;
 

@@ -372,15 +372,42 @@ bool SubscriberHistory::readNextData(
 
     if (lock.try_lock_until(max_blocking_time))
     {
-        CacheChange_t* change;
-        WriterProxy* wp = nullptr;
-        if (mp_reader->nextUnreadCache(&change, &wp))
+        iterator it = get_first_change_with_minimum_ts(last_read_timestamp_);
+        while (it != m_changes.cend())
         {
+            CacheChange_t* change = *it;
+
+            // We should always check the isRead flag for the case in which several samples have the same timestamp
+            while (change && change->isRead)
+            {
+                last_read_timestamp_ = change->sourceTimestamp;
+                ++it;
+                change = (it == m_changes.end()) ? nullptr : *it;
+            }
+
+            // Early end if we get to the last change
+            if (!change)
+            {
+                break;
+            }
+
+            // Indicate we are accessing the change. This will check validity in the case of data-sharing
+            WriterProxy* wp = nullptr;
+            if (!mp_reader->begin_sample_access_nts(change, wp))
+            {
+                // Remove from history
+                remove_change_sub(change, it);
+
+                // Current iterator will point to change next to the one removed. Avoid incrementing.
+                continue;
+            }
+
             logInfo(SUBSCRIBER, mp_reader->getGuid().entityId << ": reading " << change->sequenceNumber);
             uint32_t ownership = wp && qos_.m_ownership.kind == EXCLUSIVE_OWNERSHIP_QOS ?
                     wp->ownership_strength() : 0;
             bool deserialized = deserialize_change(change, ownership, data, info);
-            mp_reader->change_read_by_user(change, wp);
+            mp_reader->end_sample_access_nts(change, wp, true);
+            last_read_timestamp_ = change->sourceTimestamp;
             return deserialized;
         }
     }
