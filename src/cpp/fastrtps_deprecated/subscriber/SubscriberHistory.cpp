@@ -143,7 +143,12 @@ bool SubscriberHistory::received_change(
     }
 
     std::lock_guard<RecursiveTimedMutex> guard(*mp_mutex);
-    return receive_fn_(a_change, unknown_missing_changes_up_to);
+    bool ret_val = receive_fn_(a_change, unknown_missing_changes_up_to);
+    if (ret_val && (a_change->sourceTimestamp < last_read_timestamp_))
+    {
+        last_read_timestamp_ = a_change->sourceTimestamp;
+    }
+    return ret_val;
 }
 
 bool SubscriberHistory::received_change_keep_all_no_key(
