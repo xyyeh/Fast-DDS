@@ -243,6 +243,12 @@ private:
             uint32_t ownership_strength,
             void* data,
             SampleInfo_t* info);
+
+    bool read_or_take_next_data(
+            void* data,
+            SampleInfo_t* info,
+            std::chrono::steady_clock::time_point& max_blocking_time,
+            bool should_take);
 };
 
 } // namespace fastrtps

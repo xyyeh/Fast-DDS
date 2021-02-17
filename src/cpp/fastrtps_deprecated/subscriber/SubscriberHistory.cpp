@@ -357,10 +357,11 @@ bool SubscriberHistory::deserialize_change(
     return true;
 }
 
-bool SubscriberHistory::readNextData(
+bool SubscriberHistory::read_or_take_next_data(
         void* data,
         SampleInfo_t* info,
-        std::chrono::steady_clock::time_point& max_blocking_time)
+        std::chrono::steady_clock::time_point& max_blocking_time,
+        bool should_take)
 {
     if (mp_reader == nullptr || mp_mutex == nullptr)
     {
@@ -404,14 +405,27 @@ bool SubscriberHistory::readNextData(
 
             logInfo(SUBSCRIBER, mp_reader->getGuid().entityId << ": reading " << change->sequenceNumber);
             uint32_t ownership = wp && qos_.m_ownership.kind == EXCLUSIVE_OWNERSHIP_QOS ?
-                    wp->ownership_strength() : 0;
+                wp->ownership_strength() : 0;
             bool deserialized = deserialize_change(change, ownership, data, info);
             mp_reader->end_sample_access_nts(change, wp, true);
             last_read_timestamp_ = change->sourceTimestamp;
+            if (should_take)
+            {
+                bool removed = remove_change_sub(change);
+                return (deserialized && removed);
+            }
             return deserialized;
         }
     }
     return false;
+}
+
+bool SubscriberHistory::readNextData(
+        void* data,
+        SampleInfo_t* info,
+        std::chrono::steady_clock::time_point& max_blocking_time)
+{
+    return read_or_take_next_data(data, info, max_blocking_time, false);
 }
 
 bool SubscriberHistory::takeNextData(
@@ -419,32 +433,7 @@ bool SubscriberHistory::takeNextData(
         SampleInfo_t* info,
         std::chrono::steady_clock::time_point& max_blocking_time)
 {
-    if (mp_reader == nullptr || mp_mutex == nullptr)
-    {
-        logError(SUBSCRIBER, "You need to create a Reader with this History before using it");
-        return false;
-    }
-
-    std::unique_lock<RecursiveTimedMutex> lock(*mp_mutex, std::defer_lock);
-
-    if (lock.try_lock_until(max_blocking_time))
-    {
-        CacheChange_t* change = nullptr;
-        WriterProxy* wp = nullptr;
-        if (mp_reader->nextUntakenCache(&change, &wp))
-        {
-            logInfo(SUBSCRIBER, mp_reader->getGuid().entityId << ": taking seqNum" << change->sequenceNumber <<
-                    " from writer: " << change->writerGUID);
-            uint32_t ownership = wp && qos_.m_ownership.kind == EXCLUSIVE_OWNERSHIP_QOS ?
-                    wp->ownership_strength() : 0;
-            bool deserialized = deserialize_change(change, ownership, data, info);
-            mp_reader->change_read_by_user(change, wp);
-            bool removed = remove_change_sub(change);
-            return (deserialized && removed);
-        }
-    }
-
-    return false;
+    return read_or_take_next_data(data, info, max_blocking_time, true);
 }
 
 bool SubscriberHistory::get_first_untaken_info(
